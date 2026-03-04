@@ -16,4 +16,12 @@ def process_data(data):
 
     data["alerts"] = alerts
 
+    # system health status
+    if len(alerts) == 0:
+        data["status"] = "NORMAL"
+    elif len(alerts) == 1:
+        data["status"] = "WARNING"
+    else:
+        data["status"] = "CRITICAL"
+
     return data
