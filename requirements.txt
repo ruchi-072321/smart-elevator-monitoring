@@ -1,0 +1,7 @@
+boto3
+python-dotenv
+AWSIoTPythonSDK
+Flask
+Flask-Cors
+streamlit
+plotly

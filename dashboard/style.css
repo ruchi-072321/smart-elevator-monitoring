@@ -15,9 +15,46 @@ body {
 .card {
     background: white;
     padding: 20px;
-    width: 130px;
+    width: 150px;
     border-radius: 10px;
     box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+}
+
+.sensor-grid {
+    display: flex;
+    gap: 18px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 20px;
+}
+
+.sensor-card {
+    background: white;
+    width: 240px;
+    text-align: left;
+    padding: 16px;
+    border-radius: 12px;
+    box-shadow: 0 3px 12px rgba(0,0,0,0.08);
+}
+
+.sensor-card h3 {
+    margin-top: 0;
+}
+
+.sensor-card.normal {
+    border-left: 6px solid #2ecc71;
+}
+
+.sensor-card.warning {
+    border-left: 6px solid #f39c12;
+}
+
+.sensor-card.critical {
+    border-left: 6px solid #e74c3c;
+}
+
+.sensor-card.offline {
+    border-left: 6px solid #95a5a6;
 }
 
 .charts {
@@ -25,13 +62,14 @@ body {
     justify-content: center;
     gap: 20px;
     margin-top: 30px;
+    flex-wrap: wrap;
 }
 
 .chart-box {
     background: white;
     padding: 20px;
     border-radius: 10px;
-    width: 350px;
+    width: 420px;
 }
 
 .alert-box {
@@ -39,12 +77,11 @@ body {
     padding: 15px;
     color: white;
     border-radius: 10px;
-    width: 300px;
+    width: 400px;
     margin-left: auto;
     margin-right: auto;
 }
 
-/* 🔥 Blink animation */
 @keyframes blink {
     0% { opacity: 1; }
     50% { opacity: 0.4; }

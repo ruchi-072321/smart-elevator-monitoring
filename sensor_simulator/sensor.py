@@ -1,46 +1,39 @@
 import random
 import time
-import requests
 
-API_URL = "https://n7omj6kh6k.execute-api.us-east-1.amazonaws.com/process-elevator-data"
+ELEVATOR_ID = "ELEVATOR_1"
+SENSOR_TYPES = ["temperature", "vibration", "weight", "people_count"]
 
-while True:
-    base_temp = 35
-    base_vibration = 2
 
-    data = {
-        "elevator_id": "ELEVATOR_1",
+def create_sensor_payload(sensor_type, base):
+    return {
+        "elevator_id": ELEVATOR_ID,
         "timestamp": str(int(time.time() * 1000)),
-        "people_count": random.randint(0, 10),
-        "temperature": base_temp + random.randint(-5, 10),
-        "vibration": round(base_vibration + random.uniform(-1.5, 2.5), 2),
-        "door_status": random.choice(["open", "closed"]),
-        "weight": random.randint(100, 800)
+        "sensor_type": sensor_type,
+        "sensor_value": base[sensor_type],
+        "people_count": base["people_count"],
+        "temperature": base["temperature"],
+        "vibration": base["vibration"],
+        "door_status": base["door_status"],
+        "weight": base["weight"]
     }
 
-    # 🔥 ALERT LOGIC
-    alerts = []
-    status = "NORMAL"
 
-    if data["temperature"] > 60:
-        alerts.append("High temperature")
-        status = "WARNING"
+def generate_sensor_data():
+    temperature = round(20 + random.uniform(-10, 20), 1)
+    vibration = round(random.uniform(0.1, 5.5), 2)
+    weight = random.randint(0, 2500)
+    people_count = random.randint(0, 25)
+    door_status = random.choice(["open", "closed", "opening", "closing"])
+    
+    base = {
+        "people_count": people_count,
+        "temperature": temperature,
+        "vibration": vibration,
+        "weight": weight,
+        "door_status": door_status
+    }
 
-    if data["vibration"] > 2.5:
-        alerts.append("High vibration")
-        status = "WARNING"
-
-    if data["weight"] > 700:
-        alerts.append("Overweight")
-        status = "CRITICAL"
-
-    data["alerts"] = alerts
-    data["status"] = status
-
-    try:
-        response = requests.post(API_URL, json=data)
-        print("Sent:", data, "Status:", response.status_code)
-    except Exception as e:
-        print("Error:", e)
-
-    time.sleep(3)
+    sensors = [create_sensor_payload(sensor_type, base) for sensor_type in SENSOR_TYPES]
+    assert len(sensors) == 4, f"Expected 4 sensors, got {len(sensors)}"
+    return sensors

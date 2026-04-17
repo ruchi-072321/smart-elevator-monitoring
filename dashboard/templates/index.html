@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Elevator Monitoring Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <header class="topbar">
+        <div>
+            <h1>Smart Elevator Monitoring</h1>
+            <p><strong>Smart Elevator Monitoring</strong></p>
+        </div>
+        <div class="header-actions">
+            <div class="live-badge"><span class="pulse"></span>Live</div>
+            <button type="button" class="refresh-btn" onclick="loadDashboard(true)">Refresh</button>
+        </div>
+    </header>
+
+    <main class="container">
+        <div id="loadingOverlay" class="loading-overlay">
+            <div class="spinner"></div>
+            <p>Loading dashboard...</p>
+        </div>
+
+        <section class="status-banner" id="statusBanner">
+            <div>
+                <p class="label">Current Elevator Status</p>
+                <h2 id="siteStatusText">Loading...</h2>
+            </div>
+            <div class="status-dot" id="statusDot"></div>
+        </section>
+
+        <section class="stats-grid">
+            <div class="stat-card"><p>Snapshots</p><h3 id="total_events">0</h3></div>
+            <div class="stat-card critical"><p>Critical</p><h3 id="critical">0</h3></div>
+            <div class="stat-card warning"><p>Warning</p><h3 id="warning">0</h3></div>
+            <div class="stat-card normal"><p>Normal</p><h3 id="normal">0</h3></div>
+            <div class="stat-card accent"><p>Active Sensors</p><h3 id="active_sensors">0</h3></div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-head">
+                <h2>Sensor Overview</h2>
+                <p>Latest reading from each elevator sensor</p>
+            </div>
+            <div class="sensor-grid" id="sensorGrid"></div>
+        </section>
+
+        <section class="chart-grid" id="chartsContainer"></section>
+
+        <section class="two-col">
+            <div class="panel">
+                <div class="panel-head">
+                    <h2>Recent Alerts</h2>
+                    <p id="alertsMeta">Latest elevator alerts</p>
+                </div>
+                <div class="alert-list" id="alertList"></div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-head">
+                    <h2>Latest Sensor Log</h2>
+                    <p id="logsMeta">Current reading from each active sensor</p>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Sensor</th>
+                                <th>Value</th>
+                                <th>Status</th>
+                                <th>Timestamp</th>
+                            </tr>
+                        </thead>
+                        <tbody id="logsTable"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        const chartMap = {};
+        const REFRESH_INTERVAL_MS = 5000;
+        const chartColors = {
+            temperature: "#ef4444",
+            vibration: "#f59e0b",
+            weight: "#0f766e",
+            people_count: "#2563eb"
+        };
+
+        function getChartColor(sensorKey) {
+            return chartColors[sensorKey] || "#6d28d9";
+        }
+
+        function createChartPanel(sensorKey, chartData) {
+            const panel = document.createElement("div");
+            panel.className = "panel";
+            panel.innerHTML = `
+                <div class="panel-head">
+                    <h2>${chartData.label}</h2>
+                    <p>X: Time | Y: ${chartData.unit || "value"}</p>
+                </div>
+                <div class="chart-wrap"><canvas id="chart-${sensorKey}"></canvas></div>
+            `;
+            return panel;
+        }
+
+        function renderCharts(charts) {
+            const container = document.getElementById("chartsContainer");
+            container.innerHTML = "";
+            Object.keys(chartMap).forEach((key) => {
+                chartMap[key].destroy();
+                delete chartMap[key];
+            });
+
+            Object.entries(charts).forEach(([sensorKey, chartData]) => {
+                const panel = createChartPanel(sensorKey, chartData);
+                container.appendChild(panel);
+            });
+
+            Object.entries(charts).forEach(([sensorKey, chartData]) => {
+                renderLineChart(sensorKey, chartData);
+            });
+        }
+
+        function formatStatus(status) {
+            const banner = document.getElementById("statusBanner");
+            const dot = document.getElementById("statusDot");
+            const text = document.getElementById("siteStatusText");
+            banner.className = "status-banner " + status.toLowerCase();
+            dot.className = "status-dot " + status.toLowerCase();
+            text.textContent = status;
+        }
+
+        function formatTimestamp(raw) {
+            if (!raw) {
+                return "--";
+            }
+
+            const numeric = Number(raw);
+            const date = Number.isNaN(numeric) ? new Date(raw) : new Date(numeric);
+            if (Number.isNaN(date.getTime())) {
+                return String(raw);
+            }
+            return date.toLocaleTimeString();
+        }
+
+        function renderSummary(summary) {
+            document.getElementById("total_events").textContent = summary.total_events ?? 0;
+            document.getElementById("critical").textContent = summary.critical ?? 0;
+            document.getElementById("warning").textContent = summary.warning ?? 0;
+            document.getElementById("normal").textContent = summary.normal ?? 0;
+            document.getElementById("active_sensors").textContent = summary.active_sensors ?? 0;
+        }
+
+        function renderSensorCards(sensorCards) {
+            const grid = document.getElementById("sensorGrid");
+            const icons = {
+                temperature: "fas fa-thermometer-half",
+                vibration: "fas fa-wave-square",
+                weight: "fas fa-weight-scale",
+                people_count: "fas fa-users"
+            };
+
+            if (!sensorCards.length) {
+                grid.innerHTML = '<div class="empty-state">Waiting for elevator data...</div>';
+                return;
+            }
+
+            grid.innerHTML = "";
+            sensorCards.forEach((sensor) => {
+                const card = document.createElement("div");
+                card.className = `sensor-card ${sensor.status.toLowerCase()}`;
+                const formattedValue = sensor.value === null || sensor.value === undefined
+                    ? "N/A"
+                    : `${sensor.value} ${sensor.unit}`;
+                card.innerHTML = `
+                    <div class="sensor-top">
+                        <h3><i class="${icons[sensor.sensor_type] || "fas fa-microchip"}"></i> ${sensor.label}</h3>
+                        <span class="pill ${sensor.status.toLowerCase()}">${sensor.status}</span>
+                    </div>
+                    <div class="sensor-value">${formattedValue}</div>
+                    <p class="sensor-message">${sensor.message}</p>
+                    <p class="sensor-time">${formatTimestamp(sensor.timestamp)}</p>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        function renderLineChart(sensorKey, chartData) {
+            const canvas = document.getElementById(`chart-${sensorKey}`);
+            if (!canvas) {
+                return;
+            }
+
+            const labels = (chartData.labels || []).map((label) => formatTimestamp(label));
+            const values = Array.isArray(chartData.values)
+                ? chartData.values.map((value) => (value === null || value === undefined ? null : Number(value)))
+                : [];
+
+            if (chartMap[sensorKey]) {
+                chartMap[sensorKey].destroy();
+            }
+
+            chartMap[sensorKey] = new Chart(canvas.getContext("2d"), {
+                type: "line",
+                data: {
+                    labels: [...labels],
+                    datasets: [{
+                        label: `${chartData.label} (${chartData.unit})`,
+                        data: [...values],
+                        borderColor: getChartColor(sensorKey),
+                        backgroundColor: getChartColor(sensorKey) + "22",
+                        fill: true,
+                        tension: 0.35,
+                        pointRadius: 3
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: { duration: 0 },
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: "Time"
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: chartData.unit
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderAlerts(alerts) {
+            const list = document.getElementById("alertList");
+            document.getElementById("alertsMeta").textContent = `${alerts.length} recent alert(s)`;
+
+            if (!alerts.length) {
+                list.innerHTML = '<div class="empty-state">No active alerts. Elevator is operating normally.</div>';
+                return;
+            }
+
+            list.innerHTML = "";
+            alerts.forEach((alert) => {
+                const item = document.createElement("div");
+                item.className = `alert-item ${alert.status.toLowerCase()}`;
+                item.innerHTML = `
+                    <div class="alert-head">
+                        <h3>${alert.sensor_type.replace("_", " ")}</h3>
+                        <span class="pill ${alert.status.toLowerCase()}">${alert.status}</span>
+                    </div>
+                    <p>${alert.message}</p>
+                    <div class="alert-meta">
+                        <span>Value: ${alert.value} ${alert.unit}</span>
+                        <span>${formatTimestamp(alert.timestamp)}</span>
+                    </div>
+                `;
+                list.appendChild(item);
+            });
+        }
+
+        function renderLogs(logs) {
+            const tbody = document.getElementById("logsTable");
+            document.getElementById("logsMeta").textContent = `${logs.length} active sensor reading(s)`;
+
+            if (!logs.length) {
+                tbody.innerHTML = '<tr><td colspan="4"><div class="empty-state">No sensor data yet.</div></td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = "";
+            logs.forEach((log) => {
+                const row = document.createElement("tr");
+                const value = log.sensor_value === null || log.sensor_value === undefined
+                    ? "N/A"
+                    : log.sensor_value;
+                row.innerHTML = `
+                    <td>${log.sensor_type.replace("_", " ")}</td>
+                    <td>${value}</td>
+                    <td><span class="pill ${log.status.toLowerCase()}">${log.status}</span></td>
+                    <td>${formatTimestamp(log.timestamp)}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        async function loadDashboard(showOverlay = false) {
+            const overlay = document.getElementById("loadingOverlay");
+            if (showOverlay) {
+                overlay.style.display = "flex";
+            }
+
+            try {
+                const response = await fetch("/api/dashboard", { cache: "no-store" });
+                if (!response.ok) {
+                    throw new Error(`Dashboard API failed with status ${response.status}`);
+                }
+
+                const data = await response.json();
+                renderSummary(data.summary || {});
+                formatStatus(data.site_status || "NORMAL");
+                renderSensorCards(data.sensor_cards || []);
+                renderAlerts(data.recent_alerts || []);
+                renderLogs(data.recent_logs || []);
+
+                const charts = data.charts || {};
+                renderCharts(charts);
+            } catch (error) {
+                console.error("Error loading dashboard:", error);
+                document.getElementById("alertList").innerHTML =
+                    `<div class="empty-state">Unable to load dashboard data: ${error.message}</div>`;
+            } finally {
+                if (showOverlay) {
+                    overlay.style.display = "none";
+                }
+            }
+        }
+
+        loadDashboard(true);
+        setInterval(() => loadDashboard(false), REFRESH_INTERVAL_MS);
+    </script>
+</body>
+</html>
